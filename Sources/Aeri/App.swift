@@ -29,5 +29,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.contentView = NSHostingView(rootView: NotchView(state: state, nowPlaying: nowPlaying, shelf: shelf, clipboard: clipboard, weather: weather, notchSize: notch))
         panel.orderFrontRegardless()
         tracker = MouseTracker(panel: panel, state: state, notchSize: notch)
+        SettingsWindow.shared = SettingsWindow(state: state, weather: weather)
     }
 }

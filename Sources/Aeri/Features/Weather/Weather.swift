@@ -13,12 +13,33 @@ final class Weather: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var loading = false
 
-    let unit = Locale.current.measurementSystem == .us ? "fahrenheit" : "celsius"
+    enum Units: String, CaseIterable {
+        case automatic, celsius, fahrenheit
+        var label: String { self == .automatic ? "Automatic" : self == .celsius ? "Celsius (°C)" : "Fahrenheit (°F)" }
+    }
+
+    /// Set in Settings and saved; Automatic follows the Mac's region.
+    @Published var units: Units {
+        didSet {
+            UserDefaults.standard.set(units.rawValue, forKey: Self.unitsKey)
+            refresh()
+        }
+    }
+
+    private var unit: String {
+        switch units {
+        case .automatic: return Locale.current.measurementSystem == .us ? "fahrenheit" : "celsius"
+        case .celsius: return "celsius"
+        case .fahrenheit: return "fahrenheit"
+        }
+    }
     private var fetchedAt: Date?
     private var timer: Timer?
     private static let placeKey = "weather.place"
+    private static let unitsKey = "weather.units"
 
     init() {
+        units = UserDefaults.standard.string(forKey: Self.unitsKey).flatMap(Units.init(rawValue:)) ?? .automatic
         if let data = UserDefaults.standard.data(forKey: Self.placeKey) {
             place = try? JSONDecoder().decode(Place.self, from: data)
         }

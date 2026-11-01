@@ -75,7 +75,7 @@ final class MouseTracker {
             let anim: Animation = inside ? .spring(response: 0.35, dampingFraction: 0.8) : .spring(response: 0.25, dampingFraction: 0.9)
             withAnimation(anim) {
                 state.expanded = inside
-                if inside && isDragging { state.select(.shelf) }   // dragging something in: show the shelf
+                if inside && isDragging { state.select(.shelf) }   // no-op if the Shelf tab is off   // dragging something in: show the shelf
             }
         }
     }

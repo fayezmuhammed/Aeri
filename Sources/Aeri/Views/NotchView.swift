@@ -2,11 +2,33 @@ import AppKit
 import SwiftUI
 
 /// Order matches the tab bar, so switching knows which way to slide.
-enum NotchTab: Int { case nowPlaying, shelf, clipboard, weather }
+enum NotchTab: Int, CaseIterable {
+    case nowPlaying, shelf, clipboard, weather
+
+    var title: String {
+        switch self {
+        case .nowPlaying: return "Now Playing"
+        case .shelf: return "Shelf"
+        case .clipboard: return "Clipboard"
+        case .weather: return "Weather"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .nowPlaying: return "music.note"
+        case .shelf: return "tray"
+        case .clipboard: return "doc.on.clipboard"
+        case .weather: return "cloud.sun"
+        }
+    }
+}
 
 final class NotchState: ObservableObject {
     @Published var expanded = false
-    @Published private(set) var tab: NotchTab = .nowPlaying
+    @Published private(set) var tab: NotchTab
+    /// Tabs shown in the notch, in tab-bar order; set in Settings and saved. Never empty.
+    @Published private(set) var enabledTabs: [NotchTab]
     /// Direction of the last switch: content slides in from the right when moving right.
     private(set) var movingForward = true
     /// True while a drag hovers over the notch.
@@ -14,8 +36,28 @@ final class NotchState: ObservableObject {
     /// Keeps the notch open while a menu from it is showing.
     var holdOpen = false
 
+    private static let enabledKey = "tabs.enabled"
+
+    init() {
+        let saved = (UserDefaults.standard.array(forKey: Self.enabledKey) as? [Int])?.compactMap(NotchTab.init(rawValue:))
+        let enabled = (saved?.isEmpty == false) ? saved! : NotchTab.allCases
+        enabledTabs = enabled
+        tab = enabled[0]
+    }
+
+    func isEnabled(_ t: NotchTab) -> Bool { enabledTabs.contains(t) }
+
+    func setEnabled(_ t: NotchTab, _ on: Bool) {
+        guard on || enabledTabs.count > 1 else { return }   // keep at least one tab
+        var set = Set(enabledTabs)
+        if on { set.insert(t) } else { set.remove(t) }
+        enabledTabs = NotchTab.allCases.filter(set.contains)
+        UserDefaults.standard.set(enabledTabs.map(\.rawValue), forKey: Self.enabledKey)
+        if !isEnabled(tab) { select(enabledTabs[0]) }
+    }
+
     func select(_ new: NotchTab) {
-        guard new != tab else { return }
+        guard new != tab, isEnabled(new) else { return }
         movingForward = new.rawValue > tab.rawValue
         withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) { tab = new }
     }
@@ -55,6 +97,7 @@ struct NotchView: View {
             // Files can be dropped anywhere on the notch.
             .onDrop(of: ["public.file-url"],
                     isTargeted: Binding(get: { state.dropTargeted }, set: { state.dropTargeted = $0 })) { providers in
+                guard state.isEnabled(.shelf) else { return false }
                 state.select(.shelf)
                 return shelf.accept(providers)
             }
@@ -83,10 +126,9 @@ struct ExpandedContent: View {
         VStack(spacing: 10) {
             HStack(spacing: 16) {
                 HStack(spacing: 4) {
-                    tabButton(.nowPlaying, icon: "music.note")
-                    tabButton(.shelf, icon: shelf.items.isEmpty ? "tray" : "tray.full.fill")
-                    tabButton(.clipboard, icon: "doc.on.clipboard")
-                    tabButton(.weather, icon: "cloud.sun")
+                    ForEach(state.enabledTabs, id: \.self) { tab in
+                        tabButton(tab, icon: tab == .shelf && !shelf.items.isEmpty ? "tray.full.fill" : tab.icon)
+                    }
                 }
                 Spacer()
                 Button { AppMenu.show(state: state) } label: {
