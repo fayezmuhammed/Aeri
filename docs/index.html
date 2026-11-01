@@ -61,6 +61,22 @@
     transition: width .5s cubic-bezier(.32,.72,0,1), height .5s cubic-bezier(.32,.72,0,1), border-radius .5s;
   }
   .notch.open { width: 62%; height: 78%; border-radius: 0 0 22px 22px; }
+  /* Closed notch with the music indicator: wings beside the hardware notch */
+  .notch.live:not(.open) { width: 25%; }
+  .wings { position: absolute; inset: 0 7px; display: flex; align-items: center; justify-content: space-between; transition: opacity .2s; }
+  .notch.open .wings, .notch:not(.live) .wings { opacity: 0; }
+  .wings .cover { width: 11px; height: 11px; border-radius: 3px; background: linear-gradient(135deg, #ff7eb3, #8b7bff 60%, #3b2fd1); }
+  .bars { display: flex; gap: 1.5px; align-items: center; height: 9px; }
+  .bars i { width: 2px; height: 9px; border-radius: 1px; background: #c39bff; animation: bounce .45s ease-in-out infinite alternate; }
+  .bars i:nth-child(2) { animation-duration: .32s; }
+  .bars i:nth-child(3) { animation-duration: .52s; }
+  .bars i:nth-child(4) { animation-duration: .38s; }
+  @keyframes bounce { from { transform: scaleY(.3); } to { transform: scaleY(1); } }
+  /* Glow in the artwork's color behind the open Now Playing tab */
+  .glow { position: absolute; inset: 0; opacity: 0; transition: opacity .4s;
+    background: radial-gradient(60% 70% at 14% 70%, rgba(214,110,220,.45), transparent 70%),
+                radial-gradient(50% 60% at 92% 110%, rgba(139,123,255,.25), transparent 70%); }
+  .notch.open[data-tab="0"] .glow { opacity: 1; }
   .inner { position: absolute; inset: 22px 16px 12px; opacity: 0; transform: translateY(-6px); transition: opacity .25s, transform .35s; text-align: left; }
   .notch.open .inner { opacity: 1; transform: none; transition-delay: .12s; }
   .tabs { display: flex; gap: 3px; }
@@ -76,7 +92,9 @@
   .ctrl { display: flex; gap: 9px; }
   .ctrl svg { width: 11px; height: 11px; }
   .track { height: 3px; margin-top: 10px; border-radius: 2px; background: rgba(255,255,255,.15); overflow: hidden; }
-  .track i { display: block; height: 100%; width: 40%; background: rgba(255,255,255,.85); }
+  .track { position: relative; overflow: visible; }
+  .track i { display: block; height: 100%; width: 40%; border-radius: 2px; background: #d98bff; }
+  .track b { position: absolute; left: 40%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: #fff; }
   .row { display: flex; gap: 6px; }
   .card { width: 52px; flex: none; text-align: center; font-size: 7px; color: rgba(255,255,255,.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card i { display: block; height: 28px; border-radius: 5px; margin-bottom: 3px; }
@@ -87,7 +105,7 @@
   .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
 
   /* Four features */
-  .features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 36px; width: 100%; }
+  .features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px 20px; margin-top: 36px; width: 100%; }
   .feature .glyph {
     width: 34px; height: 34px; margin: 0 auto; border: 1px solid var(--line); border-radius: 9px;
     display: grid; place-items: center; color: var(--text);
@@ -111,6 +129,7 @@
 
   @media (max-width: 560px) {
     .features { grid-template-columns: repeat(2, 1fr); row-gap: 28px; }
+    .notch.live:not(.open) { width: 40%; }
     .screen { aspect-ratio: 16 / 8; }
     .notch.open { width: 92%; height: 84%; }
     .menubar span { display: none; }
@@ -131,7 +150,9 @@
       <div><b>Finder</b><span>File</span><span>Edit</span><span>View</span><span>Window</span></div>
       <div id="clock">9:41</div>
     </div>
-    <div class="notch" id="notch" aria-label="Aeri notch demo">
+    <div class="notch live" id="notch" data-tab="0" aria-label="Aeri notch demo">
+      <div class="glow"></div>
+      <div class="wings"><div class="cover"></div><div class="bars"><i></i><i></i><i></i><i></i></div></div>
       <div class="inner">
         <div class="tabs">
           <div class="tab on"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M6 13.5a2 2 0 1 1-1-1.73V3.2l8-1.6v9.9a2 2 0 1 1-1-1.73V4.4L6 5.6v7.9Z"/></svg></div>
@@ -149,7 +170,7 @@
               <svg viewBox="0 0 16 16" fill="#fff"><path d="M11.5 3H13v10h-1.5zM2 3v10l8.5-5z"/></svg>
             </div>
           </div>
-          <div class="track"><i></i></div>
+          <div class="track"><i></i><b></b></div>
         </div>
         <div class="pane">
           <div class="row">
@@ -181,7 +202,7 @@
     <div class="feature">
       <div class="glyph"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M6 13.5a2 2 0 1 1-1-1.73V3.2l8-1.6v9.9a2 2 0 1 1-1-1.73V4.4L6 5.6v7.9Z"/></svg></div>
       <h3>Now Playing</h3>
-      <p>Music, Spotify and browser media, with artwork and controls.</p>
+      <p>Music, Spotify and browser media. Drag to seek, with a glow from the artwork.</p>
     </div>
     <div class="feature">
       <div class="glyph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 9h3.5l1 2h3l1-2H14M2 9l2-5h8l2 5v4H2V9Z" stroke-linejoin="round"/></svg></div>
@@ -197,6 +218,26 @@
       <div class="glyph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="6" cy="6" r="2.5"/><path d="M5 13h7a2.5 2.5 0 0 0 0-5 3.5 3.5 0 0 0-6.6 1.2A2 2 0 0 0 5 13Z"/></svg></div>
       <h3>Weather</h3>
       <p>Today at a glance. No API key, no account.</p>
+    </div>
+    <div class="feature">
+      <div class="glyph"><svg viewBox="0 0 16 16" fill="currentColor"><rect x="2" y="7" width="2" height="5" rx="1"/><rect x="5.5" y="4" width="2" height="8" rx="1"/><rect x="9" y="6" width="2" height="6" rx="1"/><rect x="12.5" y="8" width="2" height="4" rx="1"/></svg></div>
+      <h3>Live Activities</h3>
+      <p>A tiny cover and moving bars beside the notch while music plays.</p>
+    </div>
+    <div class="feature">
+      <div class="glyph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2 6h2.5L8 3v10L4.5 10H2z" stroke-linejoin="round"/><path d="M11 5.5a3.5 3.5 0 0 1 0 5"/></svg></div>
+      <h3>Volume &amp; Brightness</h3>
+      <p>A slim bar in the notch, optionally replacing the system box.</p>
+    </div>
+    <div class="feature">
+      <div class="glyph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="1.5" y="4.5" width="11" height="7" rx="2"/><path d="M14.5 7v2"/><path d="M7.5 5.5 5.5 8.5h3l-2 3" stroke-linejoin="round"/></svg></div>
+      <h3>Battery</h3>
+      <p>A quick alert when you plug in, unplug or run low.</p>
+    </div>
+    <div class="feature">
+      <div class="glyph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 4h10M3 8h10M3 12h10"/><circle cx="6" cy="4" r="1.4" fill="#1c1c1e"/><circle cx="10.5" cy="8" r="1.4" fill="#1c1c1e"/><circle cx="7" cy="12" r="1.4" fill="#1c1c1e"/></svg></div>
+      <h3>Make It Yours</h3>
+      <p>Choose your tabs, weather units and launch at login.</p>
     </div>
   </div>
 
@@ -215,6 +256,7 @@
   const show = i => {
     current = i;
     tabs.forEach((t, k) => t.classList.toggle('on', k === i));
+    notch.dataset.tab = i;
     panes.forEach((p, k) => p.classList.toggle('on', k === i));
   };
   const open = () => { notch.classList.add('open'); clearInterval(cycle); cycle = setInterval(() => show((current + 1) % tabs.length), 2400); };
