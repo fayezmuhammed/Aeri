@@ -11,6 +11,8 @@ final class NotchState: ObservableObject {
     private(set) var movingForward = true
     /// True while a drag hovers over the notch.
     @Published var dropTargeted = false
+    /// Keeps the notch open while a menu from it is showing.
+    var holdOpen = false
 
     func select(_ new: NotchTab) {
         guard new != tab else { return }
@@ -87,8 +89,8 @@ struct ExpandedContent: View {
                     tabButton(.weather, icon: "cloud.sun")
                 }
                 Spacer()
-                Button { NSApp.terminate(nil) } label: {
-                    Image(systemName: "power").font(.system(size: 14))
+                Button { AppMenu.show(state: state) } label: {
+                    Image(systemName: "gearshape.fill").font(.system(size: 14))
                 }.buttonStyle(PressableButtonStyle())
             }
             ZStack {

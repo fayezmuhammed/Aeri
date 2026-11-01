@@ -65,6 +65,7 @@ final class MouseTracker {
     }
 
     private func update() {
+        guard !state.holdOpen else { return }
         let p = NSEvent.mouseLocation
         // Small hit slop when collapsed so the notch is easy to reach from the top edge.
         let inside = shapeRect(expanded: state.expanded).insetBy(dx: state.expanded ? 0 : -4, dy: -1).contains(p)
