@@ -2,11 +2,15 @@ import SwiftUI
 
 struct NowPlayingView: View {
     @ObservedObject var model: NowPlaying
+    let state: NotchState
+
+    private var accent: Color { model.accent.map(Color.init(nsColor:)) ?? .white }
 
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
                 ArtworkView(image: model.artwork)
+                    .shadow(color: accent.opacity(model.accent == nil ? 0 : 0.55), radius: 10)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.hasTrack ? model.title : "Nothing playing")
                         .font(.system(size: 13, weight: .semibold)).lineLimit(1)
@@ -26,7 +30,7 @@ struct NowPlayingView: View {
                 }
             }
             if model.hasTrack, model.duration > 0 {
-                ProgressRow(model: model)
+                ProgressRow(model: model, state: state, accent: accent)
             } else if !model.hasTrack, let b = model.browserNeedingSetup {
                 Text("To show browser media, enable \(b.setupHint)")
                     .font(.system(size: 10)).foregroundStyle(.white.opacity(0.5))
@@ -55,23 +59,20 @@ private struct ArtworkView: View {
     }
 }
 
-/// Thin progress bar with elapsed / remaining time, extrapolated once a second while playing.
+/// Progress bar with elapsed / remaining time, extrapolated once a second while playing.
+/// Drag (or click) it to seek when the player supports it; it thickens and shows a handle on hover.
 private struct ProgressRow: View {
     @ObservedObject var model: NowPlaying
+    let state: NotchState
+    let accent: Color
+    @StateObject private var scrub = ScrubState()
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let elapsed = model.elapsed(at: context.date)
+            let elapsed = scrub.dragging ? scrub.fraction * model.duration : model.elapsed(at: context.date)
             HStack(spacing: 8) {
                 Text(Self.format(elapsed))
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.white.opacity(0.15))
-                        Capsule().fill(.white.opacity(0.85))
-                            .frame(width: geo.size.width * CGFloat(elapsed / model.duration))
-                    }
-                }
-                .frame(height: 3)
+                bar(fraction: model.duration > 0 ? elapsed / model.duration : 0)
                 Text("-" + Self.format(model.duration - elapsed))
             }
             .font(.system(size: 10).monospacedDigit())
@@ -79,10 +80,56 @@ private struct ProgressRow: View {
         }
     }
 
+    private func bar(fraction: Double) -> some View {
+        let active = model.canSeek && (scrub.hover || scrub.dragging)
+        return GeometryReader { geo in
+            let w = geo.size.width
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.15))
+                Capsule().fill(accent.opacity(0.9)).frame(width: w * CGFloat(fraction))
+                if active {
+                    Circle().fill(.white)
+                        .frame(width: 10, height: 10)
+                        .shadow(color: .black.opacity(0.3), radius: 2)
+                        .offset(x: w * CGFloat(fraction) - 5)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .frame(height: active ? 6 : 3)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { v in
+                        if !scrub.dragging {
+                            scrub.dragging = true
+                            state.holdOpen = true   // keep the notch open if the cursor slips out
+                        }
+                        scrub.fraction = min(max(Double(v.location.x / w), 0), 1)
+                    }
+                    .onEnded { _ in
+                        model.seek(to: scrub.fraction * model.duration)
+                        scrub.dragging = false
+                        state.holdOpen = false
+                    },
+                including: model.canSeek ? .all : .none)
+            .onHover { scrub.hover = $0 }
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: active)
+        }
+        .frame(height: 12)
+    }
+
     static func format(_ t: Double) -> String {
         let s = Int(max(t, 0).rounded())
         return String(format: "%d:%02d", s / 60, s % 60)
     }
+}
+
+/// Stands in for @State while scrubbing.
+private final class ScrubState: ObservableObject {
+    @Published var dragging = false
+    @Published var hover = false
+    @Published var fraction = 0.0
 }
 
 /// Shrinks slightly while pressed and brightens on hover.

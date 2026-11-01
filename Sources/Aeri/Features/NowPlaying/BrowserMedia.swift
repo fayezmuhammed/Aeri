@@ -52,6 +52,8 @@ enum BrowserMedia {
         let duration: Double
         let artwork: URL?
         let canSkip: Bool
+        /// A real media element we can set currentTime on (not Spotify Web's hidden player).
+        let seekable: Bool
     }
 
     enum Result {
@@ -70,9 +72,13 @@ enum BrowserMedia {
     private static let findMedia = "var els=Array.from(document.querySelectorAll('video,audio'));var m=els.find(function(e){return !e.paused})||els.find(function(e){return e.currentTime>0&&!e.ended});"
     private static let findControls = "var q=function(s){return document.querySelector(s)};var btnPlay=q('[data-testid=control-button-playpause]');var btnNext=q('[data-testid=control-button-skip-forward]')||q('.ytp-next-button');var btnPrev=q('[data-testid=control-button-skip-back]')||q('.ytp-prev-button');"
 
-    private static let probe = "(function(){" + findMedia + findControls + "var md=navigator.mediaSession&&navigator.mediaSession.metadata;if(!m&&!md)return '';var art=md&&md.artwork&&md.artwork.length?md.artwork[md.artwork.length-1].src:'';var playing=m?!m.paused:(navigator.mediaSession.playbackState=='playing'||(!!btnPlay&&/pause/i.test(btnPlay.getAttribute('aria-label')||'')));if(btnPlay&&m&&!els.some(function(e){return !e.paused}))playing=/pause/i.test(btnPlay.getAttribute('aria-label')||'');var pos=m?m.currentTime:0,dur=m&&isFinite(m.duration)?m.duration:0;var t2s=function(x){return x.trim().split(':').reduce(function(a,b){return a*60+(+b)},0)};var pe=q('[data-testid=playback-position]'),de=q('[data-testid=playback-duration]');if(pe&&de){pos=t2s(pe.textContent);var d=de.textContent.trim();dur=d.charAt(0)=='-'?pos+t2s(d.slice(1)):t2s(d)}return JSON.stringify({title:(md&&md.title)||document.title,artist:(md&&md.artist)||location.hostname.replace(/^www[.]/,''),playing:playing,position:pos,duration:dur,artwork:art,canSkip:!!(btnNext&&btnPrev)})})()"
+    private static let probe = "(function(){" + findMedia + findControls + "var md=navigator.mediaSession&&navigator.mediaSession.metadata;if(!m&&!md)return '';var art=md&&md.artwork&&md.artwork.length?md.artwork[md.artwork.length-1].src:'';var playing=m?!m.paused:(navigator.mediaSession.playbackState=='playing'||(!!btnPlay&&/pause/i.test(btnPlay.getAttribute('aria-label')||'')));if(btnPlay&&m&&!els.some(function(e){return !e.paused}))playing=/pause/i.test(btnPlay.getAttribute('aria-label')||'');var pos=m?m.currentTime:0,dur=m&&isFinite(m.duration)?m.duration:0;var t2s=function(x){return x.trim().split(':').reduce(function(a,b){return a*60+(+b)},0)};var pe=q('[data-testid=playback-position]'),de=q('[data-testid=playback-duration]');if(pe&&de){pos=t2s(pe.textContent);var d=de.textContent.trim();dur=d.charAt(0)=='-'?pos+t2s(d.slice(1)):t2s(d)}return JSON.stringify({title:(md&&md.title)||document.title,artist:(md&&md.artist)||location.hostname.replace(/^www[.]/,''),playing:playing,position:pos,duration:dur,artwork:art,canSkip:!!(btnNext&&btnPrev),seekable:!!m&&!(pe&&de)&&dur>0})})()"
 
     static let togglePlay = "(function(){" + findMedia + findControls + "if(btnPlay)btnPlay.click();else if(m){m.paused?m.play():m.pause()}return ''})()"
+
+    static func seek(to seconds: Double) -> String {
+        "(function(){" + findMedia + "if(m){m.currentTime=\(String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), seconds))}return ''})()"
+    }
 
     /// Clicks the site's next/previous button if it has one, otherwise seeks ±10s.
     static func skip(forward: Bool) -> String {
@@ -122,7 +128,8 @@ enum BrowserMedia {
                           position: (json["position"] as? NSNumber)?.doubleValue ?? 0,
                           duration: (json["duration"] as? NSNumber)?.doubleValue ?? 0,
                           artwork: art,
-                          canSkip: json["canSkip"] as? Bool ?? false))
+                          canSkip: json["canSkip"] as? Bool ?? false,
+                          seekable: json["seekable"] as? Bool ?? false))
     }
 
     static func run(_ js: String, browser: Browser, window: Int, tab: Int) {

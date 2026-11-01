@@ -32,6 +32,7 @@ final class NowPlaying: ObservableObject {
         var position: Double   // seconds
         var duration: Double   // seconds
         var artworkURL: URL?   // browsers only
+        var canSeek = true
     }
 
     @Published private(set) var source: Source?
@@ -39,6 +40,9 @@ final class NowPlaying: ObservableObject {
     @Published private(set) var artist = ""
     @Published private(set) var isPlaying = false
     @Published private(set) var artwork: NSImage?
+    /// Vivid color from the artwork, for the glow and progress bar.
+    @Published private(set) var accent: NSColor?
+    @Published private(set) var canSeek = false
     @Published private(set) var duration: Double = 0
     /// Position at `positionDate`; views extrapolate while playing.
     @Published private(set) var position: Double = 0
@@ -111,7 +115,7 @@ final class NowPlaying: ObservableObject {
                 case .found(let h):
                     tracks.append(Track(source: .browser(h.browser, window: h.window, tab: h.tab, canSkip: h.canSkip), title: h.title,
                                         artist: h.artist, isPlaying: h.isPlaying, position: h.position,
-                                        duration: h.duration, artworkURL: h.artwork))
+                                        duration: h.duration, artworkURL: h.artwork, canSeek: h.seekable))
                 case .needsSetup(let b): needsSetup = needsSetup ?? b
                 case .none: break
                 }
@@ -135,12 +139,14 @@ final class NowPlaying: ObservableObject {
         duration = t?.duration ?? 0
         position = t?.position ?? 0
         positionDate = Date()
+        canSeek = t?.canSeek ?? false
         reschedule()
 
         let key = t.map { "\($0.source.name)|\($0.title)|\($0.artist)" } ?? ""
         guard key != artworkKey else { return }
         artworkKey = key
         artwork = nil
+        accent = nil
         if let t { loadArtwork(t, key: key) }
     }
 
@@ -192,11 +198,28 @@ final class NowPlaying: ObservableObject {
     private func setArtwork(_ image: NSImage?, key: String) {
         guard key == artworkKey else { return }   // track changed while loading
         artwork = image
+        accent = image.flatMap(ArtworkColor.accent)
     }
 
     func playPause() { send(app: "playpause", js: BrowserMedia.togglePlay) }
     func next() { send(app: "next track", js: BrowserMedia.skip(forward: true)) }
     func previous() { send(app: "previous track", js: BrowserMedia.skip(forward: false)) }
+
+    /// Jumps to `seconds`. Updates the position right away so the bar doesn't snap back
+    /// before the player reports the new position.
+    func seek(to seconds: Double) {
+        guard let s = source, canSeek else { return }
+        position = min(max(seconds, 0), duration)
+        positionDate = Date()
+        let target = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), position)
+        queue.async { [weak self] in
+            switch s {
+            case .app(let p): _ = Self.runScript("tell application \"\(p.rawValue)\" to set player position to \(target)")
+            case .browser(let b, let w, let t, _): BrowserMedia.run(BrowserMedia.seek(to: Double(target) ?? 0), browser: b, window: w, tab: t)
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self?.refresh() }
+        }
+    }
 
     private func send(app command: String, js: String) {
         guard let s = source else { return }

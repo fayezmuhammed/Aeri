@@ -95,28 +95,58 @@ struct NotchView: View {
     let weather: Weather
     let notchSize: CGSize
 
+    /// Soft light in the artwork's color behind the open Now Playing tab.
+    @ViewBuilder private var accentGlow: some View {
+        if state.expanded, state.tab == .nowPlaying, nowPlaying.hasTrack, let accent = nowPlaying.accent {
+            let c = Color(nsColor: accent)
+            ZStack {
+                RadialGradient(colors: [c.opacity(0.42), .clear], center: UnitPoint(x: 0.12, y: 0.62),
+                               startRadius: 0, endRadius: 230)
+                RadialGradient(colors: [c.opacity(0.16), .clear], center: UnitPoint(x: 0.9, y: 1.1),
+                               startRadius: 0, endRadius: 200)
+            }
+            .clipShape(NotchShape(radius: 24))
+            // Fade in on open, but disappear at once on close so nothing lingers.
+            .transition(.asymmetric(insertion: .opacity.animation(.easeInOut(duration: 0.4)), removal: .identity))
+            .animation(.easeInOut(duration: 0.6), value: c)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .top) {
-                NotchShape(radius: state.expanded ? 24 : 10)
-                    .fill(.black)
-                    .shadow(color: .black.opacity(state.expanded ? 0.35 : 0), radius: 12, y: 4)
+                // Shadow on its own layer: it spreads wider than the notch, so it must vanish the moment
+                // the notch starts closing (fading it out left a ghost outline for a second).
                 if state.expanded {
-                    ExpandedContent(state: state, nowPlaying: nowPlaying, shelf: shelf,
-                                    clipboard: clipboard, weather: weather)
-                        .padding(.top, notchSize.height + 6)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 14)
-                        // Content arrives just after the shape grows, and leaves quickly.
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .offset(y: -8))
-                                .animation(.easeOut(duration: 0.25).delay(0.08)),
-                            removal: .opacity.animation(.easeIn(duration: 0.1))))
-                } else if let live = state.live {
-                    LiveWings(activity: live, placement: state.livePlacement, notchWidth: notchSize.width,
-                              leftWing: state.leftWing, rightWing: state.rightWing, nowPlaying: nowPlaying)
-                        .frame(height: notchSize.height)
+                    NotchShape(radius: 24)
+                        .fill(.black)
+                        .shadow(color: .black.opacity(0.35), radius: 12, y: 4)
+                        .transition(.asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.3)), removal: .identity))
                 }
+                // Everything inside the notch is clipped to its shape, so nothing (text, cover, tab
+                // bar) can show past the black edge while the shape shrinks on close.
+                ZStack(alignment: .top) {
+                    NotchShape(radius: state.expanded ? 24 : 10)
+                        .fill(.black)
+                        .overlay { accentGlow }
+                    if state.expanded {
+                        ExpandedContent(state: state, nowPlaying: nowPlaying, shelf: shelf,
+                                        clipboard: clipboard, weather: weather)
+                            .padding(.top, notchSize.height + 6)
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 14)
+                            // Content arrives just after the shape grows, and leaves at once on close.
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .offset(y: -8))
+                                    .animation(.easeOut(duration: 0.25).delay(0.08)),
+                                removal: .identity))
+                    } else if let live = state.live {
+                        LiveWings(activity: live, placement: state.livePlacement, notchWidth: notchSize.width,
+                                  leftWing: state.leftWing, rightWing: state.rightWing, nowPlaying: nowPlaying)
+                            .frame(height: notchSize.height)
+                    }
+                }
+                .clipShape(NotchShape(radius: state.expanded ? 24 : 10))
             }
             .frame(width: state.expanded ? Self.expandedSize.width : notchSize.width + state.leftWing + state.rightWing,
                    height: state.expanded ? Self.expandedSize.height : notchSize.height)
@@ -176,7 +206,7 @@ struct ExpandedContent: View {
 
     @ViewBuilder private var tabContent: some View {
         switch state.tab {
-        case .nowPlaying: NowPlayingView(model: nowPlaying)
+        case .nowPlaying: NowPlayingView(model: nowPlaying, state: state)
         case .shelf: ShelfView(shelf: shelf, state: state)
         case .clipboard: ClipboardView(history: clipboard)
         case .weather: WeatherView(weather: weather)
