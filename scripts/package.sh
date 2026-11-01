@@ -1,10 +1,10 @@
 #!/bin/bash
 # Builds dist/Aeri.app (ad-hoc signed) and dist/Aeri-<version>.zip.
-# Usage: scripts/package.sh [version]   (default 0.1.0)
+# Usage: scripts/package.sh [version]   (default 0.2.0)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${1:-0.1.0}"
+VERSION="${1:-0.2.0}"
 BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 APP="dist/Aeri.app"
 
