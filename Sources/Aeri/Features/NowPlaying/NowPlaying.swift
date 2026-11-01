@@ -60,6 +60,7 @@ final class NowPlaying: ObservableObject {
     private var artworkKey = ""
     private var refreshing = false
     private var pollTimer: Timer?
+    private var active = false
 
     init() {
         let center = DistributedNotificationCenter.default()
@@ -71,12 +72,21 @@ final class NowPlaying: ObservableObject {
 
     /// Polls while the notch is open.
     func setActive(_ active: Bool) {
-        pollTimer?.invalidate()
-        pollTimer = nil
-        guard active else { return }
-        refresh()
-        pollTimer = .scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.refresh() }
+        self.active = active
+        if active { refresh() }
+        reschedule()
     }
+
+    /// Every 3s while open. While closed, only a playing browser is polled (every 8s) so the live
+    /// indicator notices when it stops; Music/Spotify send notifications instead.
+    private func reschedule() {
+        let interval: TimeInterval? = active ? 3 : (isBrowser && isPlaying ? 8 : nil)
+        guard interval != pollTimer?.timeInterval || (interval == nil) != (pollTimer == nil) else { return }
+        pollTimer?.invalidate()
+        pollTimer = interval.map { .scheduledTimer(withTimeInterval: $0, repeats: true) { [weak self] _ in self?.refresh() } }
+    }
+
+    private var isBrowser: Bool { if case .browser = source { return true } else { return false } }
 
     func elapsed(at date: Date) -> Double {
         let t = position + (isPlaying ? date.timeIntervalSince(positionDate) : 0)
@@ -125,6 +135,7 @@ final class NowPlaying: ObservableObject {
         duration = t?.duration ?? 0
         position = t?.position ?? 0
         positionDate = Date()
+        reschedule()
 
         let key = t.map { "\($0.source.name)|\($0.title)|\($0.artist)" } ?? ""
         guard key != artworkKey else { return }

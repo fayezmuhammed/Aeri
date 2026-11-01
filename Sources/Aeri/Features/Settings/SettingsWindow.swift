@@ -7,16 +7,20 @@ final class SettingsWindow {
 
     private let state: NotchState
     private let weather: Weather
+    private let liveSettings: LiveSettings
+    private let mediaKeys: MediaKeys
     private var window: NSWindow?
 
-    init(state: NotchState, weather: Weather) {
+    init(state: NotchState, weather: Weather, liveSettings: LiveSettings, mediaKeys: MediaKeys) {
         self.state = state
         self.weather = weather
+        self.liveSettings = liveSettings
+        self.mediaKeys = mediaKeys
     }
 
     func show() {
         if window == nil {
-            let host = NSHostingController(rootView: SettingsView(state: state, weather: weather))
+            let host = NSHostingController(rootView: SettingsView(state: state, weather: weather, live: liveSettings, mediaKeys: mediaKeys))
             let w = NSWindow(contentViewController: host)
             w.title = "Aeri Settings"
             w.styleMask = [.titled, .closable]
@@ -33,6 +37,8 @@ final class SettingsWindow {
 struct SettingsView: View {
     @ObservedObject var state: NotchState
     @ObservedObject var weather: Weather
+    @ObservedObject var live: LiveSettings
+    @ObservedObject var mediaKeys: MediaKeys
     @StateObject private var login = LaunchAtLogin()
     @StateObject private var city = CityInput()
 
@@ -65,6 +71,35 @@ struct SettingsView: View {
                 Text("Tabs")
             } footer: {
                 Text("Choose which tabs appear in the notch. At least one stays on.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle("Music indicator", isOn: $live.musicIndicator)
+                Toggle("Battery and charging alerts", isOn: $live.batteryAlerts)
+                Toggle("Volume and brightness bar", isOn: $live.levelBars)
+                Toggle("Hide the system volume and brightness box", isOn: $live.replaceSystemHUD)
+                    .disabled(!live.levelBars)
+                if live.replaceSystemHUD && live.levelBars && !mediaKeys.trusted {
+                    HStack {
+                        Text("Needs Accessibility permission to intercept the keys.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Open Settings", action: mediaKeys.openAccessibilitySettings).controlSize(.small)
+                    }
+                }
+                if !mediaKeys.trusted {
+                    HStack {
+                        Text("Allow Accessibility so live activities move aside instead of covering menus and status icons.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Allow", action: mediaKeys.requestAccess).controlSize(.small)
+                    }
+                }
+            } header: {
+                Text("Live Activities")
+            } footer: {
+                Text("Shown beside the notch while it's closed. Hidden when there's no free space in the menu bar.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

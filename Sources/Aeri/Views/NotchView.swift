@@ -35,6 +35,28 @@ final class NotchState: ObservableObject {
     @Published var dropTargeted = false
     /// Keeps the notch open while a menu from it is showing.
     var holdOpen = false
+    /// Shown beside the hardware notch while closed (music, battery, volume, brightness).
+    @Published var live: LiveActivity?
+    /// Which side(s) of the notch `live` uses, chosen so it doesn't cover menu bar items.
+    @Published var livePlacement: LivePlacement = .split
+
+    /// Extra width left and right of the closed notch for `live`.
+    var leftWing: CGFloat {
+        guard let live else { return 0 }
+        switch livePlacement {
+        case .split: return live.wing
+        case .right: return 0
+        case .left: return 2 * live.wing
+        }
+    }
+    var rightWing: CGFloat {
+        guard let live else { return 0 }
+        switch livePlacement {
+        case .split: return live.wing
+        case .right: return 2 * live.wing
+        case .left: return 0
+        }
+    }
 
     private static let enabledKey = "tabs.enabled"
 
@@ -90,10 +112,16 @@ struct NotchView: View {
                             insertion: .opacity.combined(with: .offset(y: -8))
                                 .animation(.easeOut(duration: 0.25).delay(0.08)),
                             removal: .opacity.animation(.easeIn(duration: 0.1))))
+                } else if let live = state.live {
+                    LiveWings(activity: live, placement: state.livePlacement, notchWidth: notchSize.width,
+                              leftWing: state.leftWing, rightWing: state.rightWing, nowPlaying: nowPlaying)
+                        .frame(height: notchSize.height)
                 }
             }
-            .frame(width: state.expanded ? Self.expandedSize.width : notchSize.width,
+            .frame(width: state.expanded ? Self.expandedSize.width : notchSize.width + state.leftWing + state.rightWing,
                    height: state.expanded ? Self.expandedSize.height : notchSize.height)
+            // Keep the hardware notch centered when the wings are uneven.
+            .offset(x: state.expanded ? 0 : (state.rightWing - state.leftWing) / 2)
             // Files can be dropped anywhere on the notch.
             .onDrop(of: ["public.file-url"],
                     isTargeted: Binding(get: { state.dropTargeted }, set: { state.dropTargeted = $0 })) { providers in

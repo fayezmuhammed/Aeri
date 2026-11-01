@@ -58,10 +58,13 @@ final class MouseTracker {
 
     /// Screen rect of the shape in its current state (matches NotchView's frame).
     private func shapeRect(expanded: Bool) -> NSRect {
-        let size = expanded ? NotchView.expandedSize : notchSize
         let f = panel.frame
-        return NSRect(x: f.midX - size.width / 2, y: f.maxY - size.height,
-                      width: size.width, height: size.height)
+        if expanded {
+            let size = NotchView.expandedSize
+            return NSRect(x: f.midX - size.width / 2, y: f.maxY - size.height, width: size.width, height: size.height)
+        }
+        return NSRect(x: f.midX - notchSize.width / 2 - state.leftWing, y: f.maxY - notchSize.height,
+                      width: notchSize.width + state.leftWing + state.rightWing, height: notchSize.height)
     }
 
     private func update() {
