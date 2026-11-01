@@ -90,25 +90,55 @@ private struct LevelBar: View {
 }
 
 /// Four bars bouncing at different speeds; flat while paused.
-private struct AudioBars: View {
+/// Built on Core Animation layers: the window server runs the repeating animation by itself, so
+/// the app does no per-frame work. (A SwiftUI repeatForever animation re-renders the view every
+/// frame and cost ~5% CPU while music played.)
+private struct AudioBars: NSViewRepresentable {
     let playing: Bool
     let color: Color
-    @StateObject private var phase = HoverFlag()   // stands in for @State
+
     private static let bars: [(low: CGFloat, high: CGFloat, speed: Double)] =
         [(0.3, 1.0, 0.42), (0.5, 0.8, 0.31), (0.25, 0.95, 0.52), (0.4, 0.7, 0.37)]
+    private static let size = CGSize(width: 2.5, height: 12), gap: CGFloat = 2
 
-    var body: some View {
-        HStack(spacing: 2) {
-            ForEach(0..<Self.bars.count, id: \.self) { i in
-                let bar = Self.bars[i]
-                Capsule()
-                    .fill(color)
-                    .frame(width: 2.5, height: 12)
-                    .scaleEffect(x: 1, y: playing ? (phase.on ? bar.high : bar.low) : 0.2)
-                    .animation(playing ? .easeInOut(duration: bar.speed).repeatForever(autoreverses: true) : .default,
-                               value: phase.on)
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: Self.width, height: Self.size.height))
+        view.wantsLayer = true
+        for i in Self.bars.indices {
+            let bar = CALayer()
+            bar.frame = CGRect(x: CGFloat(i) * (Self.size.width + Self.gap), y: 0,
+                               width: Self.size.width, height: Self.size.height)
+            bar.cornerRadius = Self.size.width / 2
+            view.layer?.addSublayer(bar)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        let cg = NSColor(color).cgColor
+        for (i, bar) in (view.layer?.sublayers ?? []).enumerated() {
+            bar.backgroundColor = cg
+            let spec = Self.bars[i]
+            if playing {
+                guard bar.animation(forKey: "bounce") == nil else { continue }
+                let a = CABasicAnimation(keyPath: "transform.scale.y")
+                a.fromValue = spec.low
+                a.toValue = spec.high
+                a.duration = spec.speed
+                a.autoreverses = true
+                a.repeatCount = .infinity
+                a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                bar.add(a, forKey: "bounce")
+            } else {
+                bar.removeAnimation(forKey: "bounce")
+                bar.transform = CATransform3DMakeScale(1, 0.2, 1)
             }
         }
-        .onAppear { phase.on = true }
     }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSView, context: Context) -> CGSize? {
+        CGSize(width: Self.width, height: Self.size.height)
+    }
+
+    private static var width: CGFloat { CGFloat(bars.count) * size.width + CGFloat(bars.count - 1) * gap }
 }

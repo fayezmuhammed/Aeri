@@ -12,7 +12,7 @@ final class NowPlaying: ObservableObject {
         var notification: String { self == .music ? "com.apple.Music.playerInfo" : "com.spotify.client.PlaybackStateChanged" }
     }
 
-    enum Source {
+    enum Source: Equatable {
         case app(Player)
         case browser(Browser, window: Int, tab: Int, canSkip: Bool)
 
@@ -63,6 +63,9 @@ final class NowPlaying: ObservableObject {
     private let queue = DispatchQueue(label: "NowPlaying")   // AppleScript is slow; keep it off main
     private var artworkKey = ""
     private var refreshing = false
+    private var pendingRefresh = false
+    /// Whether any app is sending audio to the output device (from SystemAudio).
+    private var audioRunning = false
     private var pollTimer: Timer?
     private var active = false
 
@@ -81,13 +84,28 @@ final class NowPlaying: ObservableObject {
         reschedule()
     }
 
-    /// Every 3s while open. While closed, only a playing browser is polled (every 8s) so the live
-    /// indicator notices when it stops; Music/Spotify send notifications instead.
+    /// Every 3s while open (full scan). While closed, the known browser tab alone is polled every 2s
+    /// while it plays, and also while paused as long as the audio device is still running: browsers
+    /// hold the device for ~11s after a pause, so a quick resume sends no "audio started" event and
+    /// only this poll catches it. Once the device is released, starts arrive via `audioActivityChanged`.
+    /// Music/Spotify send notifications instead.
     private func reschedule() {
-        let interval: TimeInterval? = active ? 3 : (isBrowser && isPlaying ? 8 : nil)
+        let interval: TimeInterval? = active ? 3 : (isBrowser && (isPlaying || audioRunning)) ? 2 : nil
         guard interval != pollTimer?.timeInterval || (interval == nil) != (pollTimer == nil) else { return }
         pollTimer?.invalidate()
-        pollTimer = interval.map { .scheduledTimer(withTimeInterval: $0, repeats: true) { [weak self] _ in self?.refresh() } }
+        pollTimer = interval.map { .scheduledTimer(withTimeInterval: $0, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.refresh(full: self.active)
+        } }
+    }
+
+    /// Some app started or stopped playing audio: re-check now, and once more shortly after, since
+    /// players update their state a moment after the sound starts or stops.
+    func audioActivityChanged(_ running: Bool) {
+        audioRunning = running
+        reschedule()
+        refresh()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.refresh() }
     }
 
     private var isBrowser: Bool { if case .browser = source { return true } else { return false } }
@@ -101,16 +119,30 @@ final class NowPlaying: ObservableObject {
         !NSRunningApplication.runningApplications(withBundleIdentifier: p.bundleID).isEmpty
     }
 
-    func refresh() {
-        guard !refreshing else { return }   // browser scans can be slow; don't pile up
+    /// `full: false` re-checks only the known browser tab (falling back to a full scan if it's gone).
+    func refresh(full: Bool = true) {
+        // Browser scans can be slow: don't pile up, but never drop a request either.
+        guard !refreshing else {
+            pendingRefresh = true
+            return
+        }
         refreshing = true
         // Only script running apps: `tell application` would launch a closed one.
         let players = [Player.spotify, .music].filter(isRunning)
         let browsers = Browser.allCases.filter(\.isRunning)
+        let known = full ? nil : source
         queue.async { [weak self] in
             var tracks = players.compactMap(Self.fetch)
             var needsSetup: Browser?
-            for b in browsers {
+            var scanAll = true
+            if case .browser(let b, let w, let t, _)? = known, browsers.contains(b),
+               let h = BrowserMedia.probe(b, window: w, tab: t) {
+                scanAll = false
+                tracks.append(Track(source: .browser(h.browser, window: h.window, tab: h.tab, canSkip: h.canSkip), title: h.title,
+                                    artist: h.artist, isPlaying: h.isPlaying, position: h.position,
+                                    duration: h.duration, artworkURL: h.artwork, canSeek: h.seekable))
+            }
+            for b in browsers where scanAll {
                 switch BrowserMedia.scan(b) {
                 case .found(let h):
                     tracks.append(Track(source: .browser(h.browser, window: h.window, tab: h.tab, canSkip: h.canSkip), title: h.title,
@@ -125,21 +157,30 @@ final class NowPlaying: ObservableObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.refreshing = false
-                self.browserNeedingSetup = needsSetup
+                if self.browserNeedingSetup != needsSetup { self.browserNeedingSetup = needsSetup }
                 self.apply(best)
+                if self.pendingRefresh {
+                    self.pendingRefresh = false
+                    self.refresh()
+                }
             }
         }
     }
 
     private func apply(_ t: Track?) {
-        source = t?.source
-        title = t?.title ?? ""
-        artist = t?.artist ?? ""
-        isPlaying = t?.isPlaying ?? false
-        duration = t?.duration ?? 0
-        position = t?.position ?? 0
-        positionDate = Date()
-        canSeek = t?.canSeek ?? false
+        // Assign only what changed: every @Published assignment redraws the notch, even with an equal value.
+        set(\.source, t?.source)
+        set(\.title, t?.title ?? "")
+        set(\.artist, t?.artist ?? "")
+        set(\.isPlaying, t?.isPlaying ?? false)
+        set(\.duration, t?.duration ?? 0)
+        set(\.canSeek, t?.canSeek ?? false)
+        // Position: only correct it if it drifted from our own extrapolation (views tick it locally).
+        let newPosition = t?.position ?? 0
+        if abs(elapsed(at: Date()) - newPosition) > 1.5 {
+            position = newPosition
+            positionDate = Date()
+        }
         reschedule()
 
         let key = t.map { "\($0.source.name)|\($0.title)|\($0.artist)" } ?? ""
@@ -195,6 +236,10 @@ final class NowPlaying: ObservableObject {
         }.resume()
     }
 
+    private func set<T: Equatable>(_ key: ReferenceWritableKeyPath<NowPlaying, T>, _ value: T) {
+        if self[keyPath: key] != value { self[keyPath: key] = value }
+    }
+
     private func setArtwork(_ image: NSImage?, key: String) {
         guard key == artworkKey else { return }   // track changed while loading
         artwork = image
@@ -232,9 +277,22 @@ final class NowPlaying: ObservableObject {
         }
     }
 
+    /// Compiled scripts, reused: compiling is slow and macOS malware-scans every newly compiled
+    /// script. Polling scripts never change, so each compiles once. Only touched on `queue`.
+    private static var compiled: [String: NSAppleScript] = [:]
+
     static func runScript(_ source: String) -> NSAppleEventDescriptor? {
+        let script: NSAppleScript
+        if let cached = compiled[source] {
+            script = cached
+        } else {
+            guard let s = NSAppleScript(source: source) else { return nil }
+            script = s
+            if compiled.count > 32 { compiled.removeAll() }   // one-off scripts (seek targets) can't pile up
+            compiled[source] = script
+        }
         var error: NSDictionary?
-        let result = NSAppleScript(source: source)?.executeAndReturnError(&error)
+        let result = script.executeAndReturnError(&error)
         return error == nil ? result : nil
     }
 }

@@ -119,9 +119,26 @@ enum BrowserMedia {
         if r.hasPrefix("ERR:") { return r.contains("JavaScript") ? .needsSetup(b) : .none }
         let parts = r.split(separator: "\n", maxSplits: 2).map(String.init)
         guard parts.count == 3, let w = Int(parts[0]), let t = Int(parts[1]),
-              let json = try? JSONSerialization.jsonObject(with: Data(parts[2].utf8)) as? [String: Any] else { return .none }
+              let hit = hit(parts[2], browser: b, window: w, tab: t) else { return .none }
+        return .found(hit)
+    }
+
+    /// Checks one known tab only; much cheaper than `scan`, which runs the probe in every tab.
+    /// Nil if the tab is gone or has no media any more.
+    static func probe(_ b: Browser, window: Int, tab: Int) -> Hit? {
+        let source = """
+            tell application "\(b.rawValue)"
+                return \(b.runJS(probe, in: "tab \(tab) of window \(window)"))
+            end tell
+            """
+        guard let r = NowPlaying.runScript(source)?.stringValue, !r.isEmpty else { return nil }
+        return hit(r, browser: b, window: window, tab: tab)
+    }
+
+    private static func hit(_ text: String, browser b: Browser, window w: Int, tab t: Int) -> Hit? {
+        guard let json = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else { return nil }
         let art = (json["artwork"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
-        return .found(Hit(browser: b, window: w, tab: t,
+        return Hit(browser: b, window: w, tab: t,
                           title: json["title"] as? String ?? "",
                           artist: json["artist"] as? String ?? "",
                           isPlaying: json["playing"] as? Bool ?? false,
@@ -129,7 +146,7 @@ enum BrowserMedia {
                           duration: (json["duration"] as? NSNumber)?.doubleValue ?? 0,
                           artwork: art,
                           canSkip: json["canSkip"] as? Bool ?? false,
-                          seekable: json["seekable"] as? Bool ?? false))
+                          seekable: json["seekable"] as? Bool ?? false)
     }
 
     static func run(_ js: String, browser: Browser, window: Int, tab: Int) {

@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, self.liveSettings.levelBars else { return }
             self.live.flash(.volume(volume, muted: muted), for: 1.5)
         }
+        audio.onActivityChange = { [weak self] running in self?.nowPlaying.audioActivityChanged(running) }
         mediaKeys = MediaKeys(audio: audio) { [weak self] brightness in
             guard let self, self.liveSettings.levelBars else { return }
             self.live.flash(.brightness(brightness), for: 1.5)
